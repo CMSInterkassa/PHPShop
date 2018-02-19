@@ -1,20 +1,19 @@
 <?
-/**
- * Модуль оплаты через платежный шлюз "Интеркасса"
- * www@smartbyte.pro
- * @author www.gateon.net
- * @version 1.0
- * @package PHPShopPayment 5.x Enterprise
- * Модуль Успешной оплаты
- */
+/*
++-------------------------------------+
+|  PHPShop Enterprise                 |
+|  Success Function Interkassa        |
++-------------------------------------+
+*/
 
 if(empty($GLOBALS['SysValue'])) exit(header("Location: /"));
-if($_REQUEST['ik_inv_st'] == 'success'){
-	$order_metod="Interkassa";
-	$success_function=false;
-	$my_crc = "NoN";
-	$crc = "NoN";
-	$inv_id = $_REQUEST['ik_pm_no'];
-}
 
-?>
+if(isset($_GET['ik_payment_ouid']) && !empty($_GET['payment']) && $_GET['payment'] == 'interkassa') {
+
+    $inv_id = $_GET['ik_payment_ouid'];
+    if(!empty($_SESSION['UsersId']))
+      header("Location: {$SysValue['dir']['dir']}/users/order.html?order_info={$inv_id}#Order");
+    else
+      header("Location: {$SysValue['dir']['dir']}/clients/?mail={$_SESSION['uMail']}&order={$inv_id}");
+    exit;
+}

@@ -1,118 +1,95 @@
 <?php
 /**
- * Модуль оплаты через платежный шлюз "Интеркасса"
- * www@smartbyte.pro
- * @author www.gateon.net
- * @version 1.0
- * @package PHPShopPayment 5.x Enterprise
- * Модуль взаимодействия
+ * Обработчик оповещения о платеже
  */
+session_start();
 
-//write log
-function WriteLog($MY_LMI_HASH) {
-    $handle = fopen("../paymentlog.log", "a+");
+require_once 'functions.php';
 
-    foreach ($_POST as $k => $v)
-        @$post.=$k . "=" . $v . "\r\n";
+$_classPath = "/../../";
+$classPath = dirname(dirname(__DIR__)) . DIRECTORY_SEPARATOR;
+include($classPath . "phpshop/class/obj.class.php");
+PHPShopObj::loadClass("base");
+PHPShopObj::loadClass("order");
+PHPShopObj::loadClass("file");
+PHPShopObj::loadClass("orm");
+PHPShopObj::loadClass("payment");
+PHPShopObj::loadClass("modules");
+PHPShopObj::loadClass("system");
 
-    $str = "
-      Interkassa Payment Start ------------------
-      date=" . date("F j, Y, g:i a") . "
-      $post
-      MY_LMI_HASH=$MY_LMI_HASH
-      REQUEST_URI=" . $_SERVER['REQUEST_URI'] . "
-      IP=" . $_SERVER['REMOTE_ADDR'] . "
-      Interkassa Payment End --------------------
-      ";
-    fwrite($handle, $str);
-    fclose($handle);
-}
+$PHPShopBase = new PHPShopBase($classPath . "phpshop/inc/config.ini");
 
-function UpdateNumOrder($uid) {
-  $last_num = substr($uid, -2);
-  $total = strlen($uid);
-  $ferst_num = substr($uid, 0, ($total - 2));
-  return $ferst_num . "-" . $last_num;
-}
+class InterkassaPayment extends PHPShopPaymentResult {
 
-function checkIP(){
-  $ip_stack = array(
-      'ip_begin'=>'151.80.190.97',
-      'ip_end'=>'151.80.190.104'
-  );
-
-  if(!ip2long($_SERVER['REMOTE_ADDR'])>=ip2long($ip_stack['ip_begin']) && !ip2long($_SERVER['REMOTE_ADDR'])<=ip2long($ip_stack['ip_end'])){
-      exit();
-  }
-  return true;
-}
-
-// Parse config.ini
-$SysValue = parse_ini_file("../../phpshop/inc/config.ini", 1);
-while (list($section, $array) = each($SysValue))
-    while (list($key, $value) = each($array))
-        $SysValue['other'][chr(73) . chr(110) . chr(105) . ucfirst(strtolower($section)) . ucfirst(strtolower($key))] = $value;
-
-//get secret key 
-if(isset($_REQUEST['ik_pw_via']) && $_REQUEST['ik_pw_via'] == 'test_interkassa_test_xts'){
-  $secret_key = $SysValue['interkassa']['ik_test_key'];
-} else {
-  $secret_key = $SysValue['interkassa']['ik_secret_key'];
-}
-
-//check IP
-if(checkIP()){
-  //get request data
-  $data = array();
-      foreach ($_REQUEST as $key => $value) {
-      if (!preg_match('/ik_/', $key)) continue;
-      $data[$key] = $value;
-  }
-
-  //create sign hash
-  $ik_sign = $data['ik_sign'];
-  unset($data['ik_sign']);
-  ksort($data, SORT_STRING);
-  array_push($data, $secret_key);
-  $signString = implode(':', $data);
-  $sign = base64_encode(md5($signString, true));
-
-  if ($sign != (string)$_POST['ik_sign']) {
-      echo "bad sign\n";
-      WriteLog($sign."bad sign\n");
-      exit();
-  } else {
-  // change order state to paid
-  // Connect to MySQL
-    $link_db=mysqli_connect($SysValue['connect']['host'], $SysValue['connect']['user_db'], $SysValue['connect']['pass_db']);
-    mysqli_select_db($link_db,$SysValue['connect']['dbase']);
-
-    $new_uid = UpdateNumOrder($_POST['ik_pm_no']);
-
-  // If isset order
-    $sql = "select uid from " . $SysValue['base']['table_name1'] . " where uid='$new_uid'";
-    $result = mysqli_query($link_db,$sql);
-    $row = mysqli_fetch_array($result);
-    $uid = $row['uid'];
-
-    if ($uid == $new_uid) {
-  // write payment to database
-      $sql = "INSERT INTO " . $SysValue['base']['table_name33'] . " VALUES 
-  ('$new_uid','Interkassa','" . $_POST['ik_am'] . "','" . time() . "')";        
-      $result = mysqli_query($link_db,$sql);
-
-      $sql = "UPDATE " . $SysValue['base']['table_name1'] . " SET statusi=4 WHERE uid='$new_uid'";
-      $result = mysqli_query($link_db,$sql);
-      WriteLog($sign);
-
-  // print OK signature
-      echo "OK" . $_POST['ik_pm_no'] . "\n";
-    } else {
-      WriteLog($sign);
-      echo "bad order num\n";
-      exit();
+    function __construct() {
+        $this -> debug = false;
+        $this -> log = true;
+        $this->option();
+        parent::__construct();
     }
-  }
+
+    /**
+     * Настройка модуля
+     */
+    function option() {
+        $this->payment_name = 'interkassa';
+    }
+
+    /**
+     * Проверка подписи
+     * @return boolean
+     */
+    function check() {
+        global $SysValue;
+
+        $order_id = (int)$_REQUEST['ik_pm_no'];
+
+        if($SysValue['interkassa']['ik_test_mode'])
+            $secret_key = $SysValue['interkassa']['ik_test_key'];
+        else
+            $secret_key = $SysValue['interkassa']['ik_secret_key'];
+
+        $ik_cashbox = $SysValue['interkassa']['ik_cashbox'];
+
+        $sign = IkSignFormation($_POST, $secret_key);
+
+        $this->out_summ = $_POST['ik_am'];
+        $this->inv_id = $_REQUEST['ik_payment_ouid'];
+        $this->crc = $_POST['ik_sign'];
+        $this->my_crc = $sign;
+
+        if ($this->my_crc == $this->crc && $_POST['ik_co_id'] == $ik_cashbox) {
+            if ($_POST['ik_inv_st'] == 'success') {
+                return true;
+            } elseif ($_POST['ik_inv_st'] == 'fail') {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    function true_num($uid) {
+        return $uid;
+    }
+
+    function done() {
+        $this->log();
+
+       header("Location: /done/");
+        exit;
+    }
+
+    /**
+     * Ошибка
+     */
+    function error($type = 1) {
+        $this->log();
+
+        header("Location: /fail/");
+        exit;
+    }
 
 }
-?>
+
+(new InterkassaPayment());
