@@ -15,7 +15,7 @@ $currency = $GLOBALS['PHPShopSystem']->getDefaultValutaIso();
 $mrh_ouid = explode("-", $_POST['ouid']);
 $ik_pm_id = $mrh_ouid[0]."".$mrh_ouid[1];
 $amount = number_format($GLOBALS['SysValue']['other']['total'], 2, '.', '');
-$desc = "#".$ik_pm_id;
+$desc = "order ".$ik_pm_id;
 
   $_uri = ($_SERVER['HTTPS'] ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'];
   $ik_ia_u = "$_uri/payment/interkassa/result.php?ik_payment_ouid=" . $_POST['ouid'];
